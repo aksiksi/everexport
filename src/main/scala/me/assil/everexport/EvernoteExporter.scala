@@ -1,4 +1,4 @@
-package evernote
+package me.assil.everexport
 
 import com.evernote.edam.notestore.NoteMetadata
 

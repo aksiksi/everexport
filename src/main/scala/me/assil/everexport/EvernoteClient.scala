@@ -1,4 +1,4 @@
-package evernote
+package me.assil.everexport
 
 import com.evernote.edam.`type`.{Note => ENote, Notebook => ENotebook, Resource => EResource}
 import com.evernote.edam.error.{EDAMNotFoundException, EDAMSystemException, EDAMUserException}
