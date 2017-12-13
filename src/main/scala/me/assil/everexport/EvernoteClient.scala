@@ -3,7 +3,6 @@ package me.assil.everexport
 import com.evernote.edam.`type`.{Note => ENote, Notebook => ENotebook, Resource => EResource}
 import com.evernote.edam.error.{EDAMNotFoundException, EDAMSystemException, EDAMUserException}
 import com.evernote.edam.notestore.{NoteFilter, NoteMetadata, NoteStore, NotesMetadataResultSpec}
-import com.evernote.edam.userstore.UserStore
 import com.evernote.thrift.protocol.TBinaryProtocol
 import com.evernote.thrift.transport.THttpClient
 
@@ -71,26 +70,8 @@ object EvernoteClient {
   * @param token Valid auth token to access the Evernote API
   * @param sandbox If set to `true`, API calls are made to the Evernote sandbox
   */
-class EvernoteClient(val token: String, val sandbox: Boolean = false) {
+class EvernoteClient(val token: String, val noteStoreUrl: String, val sandbox: Boolean = false) {
   import EvernoteClient._
-
-  val userStoreUrl: String =
-    if (sandbox)
-      "https://sandbox.evernote.com/edam/user"
-    else
-      "https://evernote.com/edam/user"
-
-  // Build UserStore client to make API calls
-  private val userStore: UserStore.Client = {
-    val userStoreTrans: THttpClient = new THttpClient(userStoreUrl)
-    val userStoreProt: TBinaryProtocol = new TBinaryProtocol(userStoreTrans)
-    new UserStore.Client(userStoreProt, userStoreProt)
-  }
-
-  require(userStore != null)
-
-  // Get the NoteStore URL
-  private val noteStoreUrl: String = userStore.getNoteStoreUrl(token)
 
   // Get a NoteStore instance; used for all subsequent API requests
   private val noteStore: NoteStore.Client = {
@@ -98,15 +79,6 @@ class EvernoteClient(val token: String, val sandbox: Boolean = false) {
     val noteStoreProt: TBinaryProtocol = new TBinaryProtocol(noteStoreTrans)
     new NoteStore.Client(noteStoreProt, noteStoreProt)
   }
-
-  require(noteStore != null)
-
-  /**
-    * Returns the current Evernote UserStore.
-    *
-    * @return A `UserStore.Client` instance
-    */
-  def getUserStore: UserStore.Client = userStore
 
   /**
     * Returns the current NoteStore.

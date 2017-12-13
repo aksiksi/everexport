@@ -11,9 +11,9 @@ import scala.concurrent.{ExecutionContext, Future}
   * @param sandbox Set to true to run in the Evernote sandbox.
   * @param ec Implicit execution context for Future computation.
   */
-class EvernoteExporter(val token: String, val sandbox: Boolean = false)(implicit ec: ExecutionContext) {
+class EvernoteExporter(val token: String, val noteStoreUrl: String, val sandbox: Boolean = false)(implicit ec: ExecutionContext) {
 
-  val client = new EvernoteClient(token, sandbox)
+  val client = new EvernoteClient(token, noteStoreUrl, sandbox)
 
   /**
     * Get the note metadata for a given notebook.
