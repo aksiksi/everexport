@@ -7,6 +7,7 @@ import com.evernote.thrift.protocol.TBinaryProtocol
 import com.evernote.thrift.transport.THttpClient
 
 import scala.collection.JavaConverters._
+import scala.concurrent.{ExecutionContext, Future}
 
 // Exceptions
 sealed class EvernoteException(message: String) extends Exception(message)
@@ -92,10 +93,11 @@ class EvernoteClient(val token: String, val noteStoreUrl: String, val sandbox: B
     *
     * @return `List[Notebook]` of notebook objects
     */
-  def listNotebooks: Either[EvernoteException, List[Notebook]] = {
+  def listNotebooks: Either[EvernoteException, Vector[Notebook]] = {
     try {
-      Right(noteStore.listNotebooks(token).asScala.map(convertNotebook).toList)
-    } catch {
+      Right(noteStore.listNotebooks(token).asScala.map(convertNotebook).toVector)
+    }
+    catch {
       case e: EDAMUserException => Left(EvernoteUserException(e.getMessage))
       case e: EDAMSystemException => Left(EvernoteSystemException(e.getMessage))
     }
@@ -104,7 +106,8 @@ class EvernoteClient(val token: String, val noteStoreUrl: String, val sandbox: B
   def getNotebookByGuid(guid: String): Either[EvernoteException, Notebook] = {
     try {
       Right(noteStore.getNotebook(token, guid))
-    } catch {
+    }
+    catch {
       case e: EDAMUserException => Left(EvernoteUserException(e.getMessage))
       case e: EDAMSystemException => Left(EvernoteSystemException(e.getMessage))
       case e: EDAMNotFoundException => Left(NotebookError(guid))
@@ -120,7 +123,7 @@ class EvernoteClient(val token: String, val noteStoreUrl: String, val sandbox: B
     }
   }
 
-  def getNotesMetadata(notebook: Notebook, allNotes: Boolean = false): Either[EvernoteException, List[NoteMetadata]] = {
+  def getNotesMetadata(notebook: Notebook, allNotes: Boolean = false): Either[EvernoteException, Vector[NoteMetadata]] = {
     // Create a NoteFilter
     val noteFilter = new NoteFilter
     noteFilter.setNotebookGuid(notebook.guid)
@@ -134,26 +137,41 @@ class EvernoteClient(val token: String, val noteStoreUrl: String, val sandbox: B
       // Perform API request
       // TODO: get all notes! Currently, grabs only up to 250
       val result = noteStore.findNotesMetadata(token, noteFilter, 0, 250, resultSpec)
-      Right(result.getNotes.asScala.toList)
-    } catch {
+      Right(result.getNotes.asScala.toVector)
+    }
+    catch {
       case e: EDAMUserException => Left(EvernoteUserException(e.getMessage))
       case e: EDAMSystemException => Left(EvernoteSystemException(e.getMessage))
       case e: EDAMNotFoundException => Left(NotebookError(notebook.guid))
     }
   }
 
+  /**
+    * Get the note metadata for a given notebook.
+    */
+  def getNotesMetadataAsync(notebook: Notebook)(implicit ec: ExecutionContext): Future[Vector[NoteMetadata]] = {
+    Future {
+      // Blocking call to Evernote API
+      getNotesMetadata(notebook, allNotes = true)
+    } flatMap {
+      case Right(v) => Future(v)
+      case Left(e) => Future.failed(e)
+    }
+  }
+
   def getNote(guid: String): Either[EvernoteException, Note] = {
     try {
       Right(noteStore.getNote(token, guid, true, true, true, true))
-    } catch {
+    }
+    catch {
       case e: EDAMUserException => Left(EvernoteUserException(e.getMessage))
       case e: EDAMSystemException => Left(EvernoteSystemException(e.getMessage))
       case e: EDAMNotFoundException => Left(NoteError(guid))
     }
   }
 
-  def getNotes(notebook: Notebook, allNotes: Boolean = false): Either[EvernoteException, List[Note]] = {
-    getNotesMetadata(notebook, allNotes).right.flatMap { notesMetadata =>
+  def getNotes(notebook: Notebook, allNotes: Boolean = false): Either[EvernoteException, Vector[Note]] = {
+    getNotesMetadata(notebook, allNotes).right flatMap { notesMetadata =>
       try {
         Right {
           notesMetadata map { note =>
@@ -163,7 +181,8 @@ class EvernoteClient(val token: String, val noteStoreUrl: String, val sandbox: B
             else throw result.left.get
           }
         }
-      } catch {
+      }
+      catch {
         case e: EvernoteException => Left(e)
       }
     }
