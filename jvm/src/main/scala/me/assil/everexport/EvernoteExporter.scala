@@ -5,20 +5,19 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * An async API Evernote client for use in a JSON API.
   *
+  * @author Assil Ksiksi
+  * @version 0.1
   * @param token A valid Evernote API authentication token.
   * @param noteStoreUrl NoteStore URL returned during authentication.
   * @param sandbox Set to true to run in the Evernote sandbox.
   */
 class EvernoteExporter(val token: String, val noteStoreUrl: String, val sandbox: Boolean = false)(implicit ec: ExecutionContext) {
-
-  val client = new EvernoteClient(token, noteStoreUrl, sandbox)
-
   /**
     * List all notebooks in a user's account.
     */
   def listNotebooks: Future[Vector[Notebook]] = {
     Future {
-      // Blocking call to underlying client
+      val client = new EvernoteClient(token, noteStoreUrl, sandbox)
       client.listNotebooks
     } flatMap {
       case Right(v) => Future(v)
@@ -30,18 +29,35 @@ class EvernoteExporter(val token: String, val noteStoreUrl: String, val sandbox:
     * Get titles of all notes in a given notebook.
     */
   def getNoteTitles(notebook: Notebook): Future[Vector[String]] = {
-    client.getNotesMetadataAsync(notebook)(ec) map { notesMetadata =>
-      notesMetadata.map(_.getTitle)
+    Future {
+      val client = new EvernoteClient(token, noteStoreUrl, sandbox)
+      client.getNotesMetadata(notebook) map { notesMetadata =>
+        notesMetadata.map(_.title)
+      }
+    } flatMap {
+      case Right(v) => Future(v)
+      case Left(e) => Future.failed(e)
     }
   }
 
   /**
-    * Get a single note.
+    * Get the note metadata for a given notebook.
     */
-  def getNote(guid: String): Future[Note] = {
+  def getNotesMetadata(notebook: Notebook): Future[Vector[Note]] = {
     Future {
-      // Blocking call to underlying client
-      client.getNote(guid)
+      val client = new EvernoteClient(token, noteStoreUrl, sandbox)
+      client.getNotesMetadata(notebook, allNotes = true)
+    } flatMap {
+      case Right(v) => Future(v)
+      case Left(e) => Future.failed(e)
+    }
+  }
+
+  def getNoteContent(note: Note): Future[Note] = {
+    Future {
+      val client = new EvernoteClient(token, noteStoreUrl, sandbox)
+
+      client.getNoteContent(note)
     } flatMap {
       case Right(v) => Future(v)
       case Left(e) => Future.failed(e)
@@ -50,14 +66,13 @@ class EvernoteExporter(val token: String, val noteStoreUrl: String, val sandbox:
 
   /**
     * Get all notes in a given notebook.
+    *
+    * First, grab metadata. Then, grab the actual note content.
     */
   def getNotebook(notebook: Notebook): Future[Vector[Note]] = {
-    client.getNotesMetadataAsync(notebook) flatMap { notesMetadata =>
-      val noteList: Vector[Future[Note]] = notesMetadata map { note => getNote(note.getGuid) }
-
-      // NOTE: this fails if one of the futures fails
-      // Transforms a List[Future[T]] to Future[List[T]] -- like magic!
-      Future.sequence(noteList)
+    getNotesMetadata(notebook) flatMap { notes =>
+      val noteFutures = notes map { noteMetadata => getNoteContent(noteMetadata) }
+      Future.sequence(noteFutures) // Vector[Future] -> Future[Vector]
     }
   }
 }

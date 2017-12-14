@@ -1,17 +1,17 @@
 package me.assil.everexport
 
-import com.evernote.edam.`type`.{Note => ENote, Notebook => ENotebook, Resource => EResource}
-import com.evernote.edam.error.{EDAMNotFoundException, EDAMSystemException, EDAMUserException}
-import com.evernote.edam.notestore.{NoteFilter, NoteMetadata, NoteStore, NotesMetadataResultSpec}
-import com.evernote.thrift.protocol.TBinaryProtocol
-import com.evernote.thrift.transport.THttpClient
+import com.evernote.clients.NoteStoreClient
+import com.evernote.edam.`type`.{Notebook => ENotebook, Resource => EResource}
+import com.evernote.edam.error.{EDAMErrorCode, EDAMNotFoundException, EDAMSystemException, EDAMUserException}
+import com.evernote.edam.notestore._
+import com.evernote.edam.userstore
 
 import scala.collection.JavaConverters._
-import scala.concurrent.{ExecutionContext, Future}
 
 // Exceptions
 sealed class EvernoteException(message: String) extends Exception(message)
 final case class EvernoteSystemException(message: String) extends EvernoteException(message)
+final case class EvernoteRateLimitException(message: String, duration: Int) extends EvernoteException(message)
 final case class EvernoteUserException(message: String) extends EvernoteException(message)
 final case class NoteError(id: String) extends EvernoteException(s"Note $id not found!")
 final case class NotebookError(id: String) extends EvernoteException(s"Notebook $id not found!")
@@ -19,10 +19,13 @@ final case class NotebookError(id: String) extends EvernoteException(s"Notebook 
 // https://dev.evernote.com/doc/reference/Types.html#Struct_Notebook
 case class Notebook(guid: String, name: String, stack: String, created: Long, updated: Long)
 
-// https://dev.evernote.com/doc/reference/Types.html#Struct_Note
-case class Note(guid: String, title: String, content: String, created: Long, updated: Long,
-                 notebookGuid: String, tagGuids: List[String], tagNames: List[String],
-                 resources: List[Resource])
+/*
+   Combination of these two:
+   - https://dev.evernote.com/doc/reference/Types.html#Struct_Note
+   - http://dev.evernote.com/doc/reference/NoteStore.html#Struct_NoteMetadata
+ */
+case class Note(guid: String, title: String, var content: Option[String], created: Long, updated: Long,
+                notebookGuid: String, tagGuids: Option[List[String]])
 
 // https://dev.evernote.com/doc/reference/Types.html#Struct_Resource
 case class Resource(guid: String, noteGuid: String, width: Int, height: Int, data: Array[Byte])
@@ -48,17 +51,15 @@ object EvernoteClient {
     )
   }
 
-  implicit def convertNote(n: ENote): Note = {
+  implicit def convertNote(n: NoteMetadata): Note = {
     Note(
       guid = n.getGuid,
       title = n.getTitle,
-      content = n.getContent,
+      content = None,
       created = n.getCreated,
       updated = n.getUpdated,
       notebookGuid = n.getNotebookGuid,
-      tagGuids = n.getTagGuids.asScala.toList,
-      tagNames = n.getTagNames.asScala.toList,
-      resources = n.getResources.asScala.map(convertResource).toList
+      tagGuids = if (n.getTagGuids != null) Some(n.getTagGuids.asScala.toList) else None
     )
   }
 }
@@ -69,24 +70,47 @@ object EvernoteClient {
   * @author Assil Ksiksi
   * @version 0.1
   * @param token Valid auth token to access the Evernote API
+  * @param noteStoreUrl NoteStore URL for the current user.
   * @param sandbox If set to `true`, API calls are made to the Evernote sandbox
   */
 class EvernoteClient(val token: String, val noteStoreUrl: String, val sandbox: Boolean = false) {
   import EvernoteClient._
 
-  // Get a NoteStore instance; used for all subsequent API requests
-  private val noteStore: NoteStore.Client = {
-    val noteStoreTrans: THttpClient = new THttpClient(noteStoreUrl)
-    val noteStoreProt: TBinaryProtocol = new TBinaryProtocol(noteStoreTrans)
-    new NoteStore.Client(noteStoreProt, noteStoreProt)
+  import com.evernote.auth.EvernoteAuth
+  import com.evernote.auth.EvernoteService
+  import com.evernote.clients.ClientFactory
+
+  private val noteStore: NoteStoreClient = {
+    val service = if (sandbox) EvernoteService.SANDBOX else EvernoteService.PRODUCTION
+    val evernoteAuth = new EvernoteAuth(service, token)
+    val factory = new ClientFactory(evernoteAuth)
+    val userStore = factory.createUserStoreClient
+
+    // Validate Evernote API version
+    require(userStore.checkVersion("EverExport", userstore.Constants.EDAM_VERSION_MAJOR, userstore.Constants.EDAM_VERSION_MINOR),
+            "Evernote SDK in use is outdated -- please upgrade!")
+
+    // Finally, get the NoteStore instance; used for all subsequent API requests
+    try {
+      factory.createNoteStoreClient
+    }
+    catch {
+      case e: EDAMUserException => throw EvernoteUserException(e.getMessage)
+      case e: EDAMSystemException =>
+        if (e.getErrorCode == EDAMErrorCode.RATE_LIMIT_REACHED)
+          throw EvernoteRateLimitException(e.getMessage, e.getRateLimitDuration)
+        else
+          throw EvernoteSystemException(e.getMessage)
+      case e: Throwable => throw new EvernoteException(e.getMessage)
+    }
   }
 
   /**
     * Returns the current NoteStore.
     *
-    * @return `NoteStore.Client`
+    * @return `NoteStoreClient`
     */
-  def getNoteStore: NoteStore.Client = noteStore
+  def getNoteStore: NoteStoreClient = noteStore
 
   /**
     * Returns all notebooks in the current user's account.
@@ -95,22 +119,32 @@ class EvernoteClient(val token: String, val noteStoreUrl: String, val sandbox: B
     */
   def listNotebooks: Either[EvernoteException, Vector[Notebook]] = {
     try {
-      Right(noteStore.listNotebooks(token).asScala.map(convertNotebook).toVector)
+      Right(noteStore.listNotebooks.asScala.map(convertNotebook).toVector)
     }
     catch {
       case e: EDAMUserException => Left(EvernoteUserException(e.getMessage))
-      case e: EDAMSystemException => Left(EvernoteSystemException(e.getMessage))
+      case e: EDAMSystemException =>
+        if (e.getErrorCode == EDAMErrorCode.RATE_LIMIT_REACHED)
+          Left(EvernoteRateLimitException(e.getMessage, e.getRateLimitDuration))
+        else
+          Left(EvernoteSystemException(e.getMessage))
+      case e: Throwable => Left(new EvernoteException(e.getMessage))
     }
   }
 
   def getNotebookByGuid(guid: String): Either[EvernoteException, Notebook] = {
     try {
-      Right(noteStore.getNotebook(token, guid))
+      Right(noteStore.getNotebook(guid))
     }
     catch {
       case e: EDAMUserException => Left(EvernoteUserException(e.getMessage))
-      case e: EDAMSystemException => Left(EvernoteSystemException(e.getMessage))
+      case e: EDAMSystemException =>
+        if (e.getErrorCode == EDAMErrorCode.RATE_LIMIT_REACHED)
+          Left(EvernoteRateLimitException(e.getMessage, e.getRateLimitDuration))
+        else
+          Left(EvernoteSystemException(e.getMessage))
       case e: EDAMNotFoundException => Left(NotebookError(guid))
+      case e: Throwable => Left(new EvernoteException(e.getMessage))
     }
   }
 
@@ -123,7 +157,7 @@ class EvernoteClient(val token: String, val noteStoreUrl: String, val sandbox: B
     }
   }
 
-  def getNotesMetadata(notebook: Notebook, allNotes: Boolean = false): Either[EvernoteException, Vector[NoteMetadata]] = {
+  def getNotesMetadata(notebook: Notebook, allNotes: Boolean = false): Either[EvernoteException, Vector[Note]] = {
     // Create a NoteFilter
     val noteFilter = new NoteFilter
     noteFilter.setNotebookGuid(notebook.guid)
@@ -134,57 +168,51 @@ class EvernoteClient(val token: String, val noteStoreUrl: String, val sandbox: B
     resultSpec.setIncludeUpdated(true)
 
     try {
-      // Perform API request
-      // TODO: get all notes! Currently, grabs only up to 250
-      val result = noteStore.findNotesMetadata(token, noteFilter, 0, 250, resultSpec)
-      Right(result.getNotes.asScala.toVector)
+      // Get first 250 notes in notebook
+      val notesMetadataList = noteStore.findNotesMetadata(noteFilter, 0, 250, resultSpec)
+
+      // Get remaining notes in the notebook (if applicable)
+      val remaining = notesMetadataList.getTotalNotes - (notesMetadataList.getStartIndex + notesMetadataList.getNotes.size())
+      val numReqs: Int = math.ceil(remaining / 250.0).toInt
+
+      // Perform a single request for each 250 notes
+      val remainingNotes: Vector[NoteMetadata] = (0 until numReqs).toVector.flatMap { r =>
+        noteStore.findNotesMetadata(noteFilter, (r+1) * 250 - 1, 250, resultSpec).getNotes.asScala
+      }
+
+      val allNotes: Vector[Note] = (notesMetadataList.getNotes.asScala.toVector ++ remainingNotes).map(convertNote)
+
+      Right(allNotes)
     }
     catch {
       case e: EDAMUserException => Left(EvernoteUserException(e.getMessage))
-      case e: EDAMSystemException => Left(EvernoteSystemException(e.getMessage))
+      case e: EDAMSystemException =>
+        if (e.getErrorCode == EDAMErrorCode.RATE_LIMIT_REACHED)
+          Left(EvernoteRateLimitException(e.getMessage, e.getRateLimitDuration))
+        else
+          Left(EvernoteSystemException(e.getMessage))
       case e: EDAMNotFoundException => Left(NotebookError(notebook.guid))
+      case e: Throwable => Left(new EvernoteException(e.getMessage))
     }
   }
 
-  /**
-    * Get the note metadata for a given notebook.
-    */
-  def getNotesMetadataAsync(notebook: Notebook)(implicit ec: ExecutionContext): Future[Vector[NoteMetadata]] = {
-    Future {
-      // Blocking call to Evernote API
-      getNotesMetadata(notebook, allNotes = true)
-    } flatMap {
-      case Right(v) => Future(v)
-      case Left(e) => Future.failed(e)
-    }
-  }
-
-  def getNote(guid: String): Either[EvernoteException, Note] = {
+  def getNoteContent(note: Note): Either[EvernoteException, Note] = {
+    // TODO: change from getNote to getNoteWithResultSpec when SDK is updated...
     try {
-      Right(noteStore.getNote(token, guid, true, true, true, true))
+      // Add content to the given note
+      val content = noteStore.getNoteContent(note.guid)
+      note.content = Some(content)
+      Right(note)
     }
     catch {
       case e: EDAMUserException => Left(EvernoteUserException(e.getMessage))
-      case e: EDAMSystemException => Left(EvernoteSystemException(e.getMessage))
-      case e: EDAMNotFoundException => Left(NoteError(guid))
-    }
-  }
-
-  def getNotes(notebook: Notebook, allNotes: Boolean = false): Either[EvernoteException, Vector[Note]] = {
-    getNotesMetadata(notebook, allNotes).right flatMap { notesMetadata =>
-      try {
-        Right {
-          notesMetadata map { note =>
-            val result = getNote(note.getGuid)
-
-            if (result.isRight) result.right.get
-            else throw result.left.get
-          }
-        }
-      }
-      catch {
-        case e: EvernoteException => Left(e)
-      }
+      case e: EDAMSystemException =>
+        if (e.getErrorCode == EDAMErrorCode.RATE_LIMIT_REACHED)
+          Left(EvernoteRateLimitException(e.getMessage, e.getRateLimitDuration))
+        else
+          Left(EvernoteSystemException(e.getMessage))
+      case e: EDAMNotFoundException => Left(NoteError(note.guid))
+      case e: Throwable => Left(new EvernoteException(e.getMessage))
     }
   }
 }
