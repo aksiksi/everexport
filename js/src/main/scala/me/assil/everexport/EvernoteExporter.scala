@@ -61,12 +61,12 @@ class EvernoteExporter(val token: String, val sandbox: Boolean = false) {
   def getNotesMetadata(notebook: Notebook, allNotes: Boolean = false): Promise[js.Array[NoteMetadata]] = {
     // Create a NoteFilter
     val noteFilter = new NoteFilter
-    noteFilter.setNotebookGuid(notebook.guid)
+    noteFilter.notebookGuid = notebook.guid
 
     // Create a ResultsSpec
     val resultSpec = new NotesMetadataResultSpec
-    resultSpec.setIncludeTitle(true)
-    resultSpec.setIncludeUpdated(true)
+    resultSpec.includeTitle = true
+    resultSpec.includeUpdated = true
 
     // Perform API request
     // TODO: get all notes! Currently, grabs only up to 250
@@ -82,7 +82,7 @@ class EvernoteExporter(val token: String, val sandbox: Boolean = false) {
   def getNotes(notebook: Notebook, allNotes: Boolean = false): Promise[js.Array[Note]] = {
     getNotesMetadata(notebook, allNotes).toFuture flatMap { notesMetadata =>
       val f = notesMetadata.toVector map { note =>
-        getNote(note.getGuid).toFuture
+        getNote(note.guid).toFuture
       }
 
       Future.sequence(f)
@@ -95,7 +95,7 @@ class EvernoteExporter(val token: String, val sandbox: Boolean = false) {
   @JSExport
   def getNoteTitles(notebook: Notebook): Promise[js.Array[String]] = {
     getNotesMetadata(notebook).toFuture map { notesMetadata =>
-      notesMetadata.map(_.getTitle)
+      notesMetadata.map(_.title)
     } toJSPromise
   }
 

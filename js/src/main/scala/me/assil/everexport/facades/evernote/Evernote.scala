@@ -79,14 +79,14 @@ class NoteStore extends js.Object {
 @JSImport("evernote", "NoteStore.NotesMetadataResultSpec")
 @js.native
 class NotesMetadataResultSpec extends js.Object {
-  def setIncludeTitle(status: Boolean): Unit = js.native
-  def setIncludeUpdated(status: Boolean): Unit = js.native
+  var includeTitle: Boolean = js.native
+  var includeUpdated: Boolean = js.native
 }
 
 @JSImport("evernote", "NoteStore.NoteFilter")
 @js.native
 class NoteFilter extends js.Object {
-  def setNotebookGuid(guid: String): Unit = js.native
+  var notebookGuid: String = js.native
 }
 
 @JSImport("evernote", "NoteStore.NoteMetadata")
@@ -100,9 +100,6 @@ class NoteMetadata extends js.Object {
   val deleted: Long = js.native
   val notebookGuid: String = js.native
   val tagGuids: Vector[String] = js.native
-
-  def getTitle: String = js.native
-  def getGuid: String = js.native
 }
 
 @JSImport("evernote", "NoteStore.NotesMetadataList")
