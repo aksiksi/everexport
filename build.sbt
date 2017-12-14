@@ -6,7 +6,7 @@ version := "0.1"
 
 scalaVersion := "2.12.3"
 
-lazy val eve =
+lazy val everexport =
   crossProject(JSPlatform, JVMPlatform)
     .crossType(CrossType.Full) // Full directory structure
     .in(file(".")) // Current directory is root
@@ -16,5 +16,5 @@ lazy val eve =
       libraryDependencies += "com.evernote" % "evernote-api" % "1.25.1"
     )
 
-lazy val eveJVM = eve.jvm
-lazy val eveJS = eve.js
+lazy val eveJVM = everexport.jvm
+lazy val eveJS = everexport.js
