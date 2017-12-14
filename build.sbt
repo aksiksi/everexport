@@ -11,10 +11,14 @@ lazy val everexport =
     .crossType(CrossType.Full) // Full directory structure
     .in(file(".")) // Current directory is root
     .settings() // Common settings
-    .jsSettings(/* ... */)
+    .jsSettings(
+      // Evernote JS SDK
+      npmDependencies in Compile += "evernote" -> "2.0.3"
+    )
     .jvmSettings(
       libraryDependencies += "com.evernote" % "evernote-api" % "1.25.1"
     )
+    .enablePlugins(ScalaJSBundlerPlugin)
 
 lazy val eveJVM = everexport.jvm
 lazy val eveJS = everexport.js
