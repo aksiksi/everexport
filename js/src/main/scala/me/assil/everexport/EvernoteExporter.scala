@@ -91,7 +91,11 @@ class EvernoteExporter(val token: String, val sandbox: Boolean = false) {
 
   @JSExport
   def getNote(guid: String): Promise[Note] = {
-    noteStore.getNote(guid, true, true, true, true)
+    val resultSpec = new NoteResultSpec
+    resultSpec.includeContent = true
+    resultSpec.includeSharedNotes = true
+
+    noteStore.getNoteWithResultSpec(guid, resultSpec)
   }
 
   def getNotes(notebook: Notebook, allNotes: Boolean = false): Promise[js.Array[Note]] = {

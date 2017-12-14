@@ -18,7 +18,6 @@ lazy val everexport =
     .jvmSettings(
       libraryDependencies += "com.evernote" % "evernote-api" % "1.25.1"
     )
-    .enablePlugins(ScalaJSBundlerPlugin)
 
 lazy val eveJVM = everexport.jvm
-lazy val eveJS = everexport.js
+lazy val eveJS = everexport.js.enablePlugins(ScalaJSBundlerPlugin)

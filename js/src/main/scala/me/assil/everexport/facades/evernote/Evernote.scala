@@ -73,6 +73,7 @@ class NoteStore extends js.Object {
                         spec: NotesMetadataResultSpec): Promise[NotesMetadataList] = js.native
   def getNote(guid: String, withContent: Boolean, withResourcesData: Boolean,
               withResourcesRecognition: Boolean, withResourcesAlternateData: Boolean): Promise[Note] = js.native
+  def getNoteWithResultSpec(guid: String, resultSpec: NoteResultSpec): Promise[Note] = js.native
   def getNotebook(guid: String): Promise[Notebook] = js.native
 }
 
@@ -81,6 +82,19 @@ class NoteStore extends js.Object {
 class NotesMetadataResultSpec extends js.Object {
   var includeTitle: Boolean = js.native
   var includeUpdated: Boolean = js.native
+}
+
+@JSImport("evernote", "NoteStore.NoteResultSpec")
+@js.native
+class NoteResultSpec extends js.Object {
+  var includeContent: Boolean = js.native
+  var includeResourcesData: Boolean = js.native
+  var includeResourcesRecognition: Boolean = js.native
+  var includeResourcesAlternateData: Boolean = js.native
+  var includeSharedNotes: Boolean = js.native
+  var includeNoteAppDataValues: Boolean = js.native
+  var includeResourceAppDataValues: Boolean = js.native
+  var includeAccountLimits: Boolean = js.native
 }
 
 @JSImport("evernote", "NoteStore.NoteFilter")
