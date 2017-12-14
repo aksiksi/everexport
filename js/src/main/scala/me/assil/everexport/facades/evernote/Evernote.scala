@@ -108,4 +108,5 @@ class NotesMetadataList extends js.Object {
   val totalNotes: Int = js.native
   val notes: js.Array[NoteMetadata] = js.native
   val updateCount: Int = js.native
+  val startIndex: Int = js.native
 }

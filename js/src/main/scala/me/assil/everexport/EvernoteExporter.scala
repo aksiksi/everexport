@@ -69,9 +69,24 @@ class EvernoteExporter(val token: String, val sandbox: Boolean = false) {
     resultSpec.includeUpdated = true
 
     // Perform API request
-    // TODO: get all notes! Currently, grabs only up to 250
     val result = noteStore.findNotesMetadata(noteFilter, 0, 250, resultSpec).toFuture
-    result map { notesMetadataList => notesMetadataList.notes } toJSPromise
+
+    result flatMap { notesMetadataList =>
+      val remaining: Int = notesMetadataList.totalNotes - (notesMetadataList.startIndex + notesMetadataList.notes.length)
+      val numReqs: Int = math.ceil(remaining / 250.0).toInt
+
+      if (numReqs > 0) {
+        val noteMetadataFutures: Seq[Future[js.Array[NoteMetadata]]] = (1 to numReqs) map { r =>
+          noteStore.findNotesMetadata(noteFilter, r * 250 - 1, 250, resultSpec).toFuture.map(_.notes)
+        }
+
+        // Transform above into a Future[Seq[Future[...]]]
+        Future.sequence(noteMetadataFutures)
+      }
+      else
+        Future(Vector(notesMetadataList.notes))
+
+    } map(_.flatten.toJSArray) toJSPromise
   }
 
   @JSExport
