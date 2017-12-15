@@ -6,10 +6,10 @@ version := "0.1"
 
 scalaVersion := "2.12.3"
 
-lazy val everexport =
+lazy val root =
   crossProject(JSPlatform, JVMPlatform)
     .crossType(CrossType.Full) // Full directory structure
-    .in(file(".")) // Current directory is root
+    .in(file("everexport"))
     .settings() // Common settings
     .jsSettings(
       // Evernote JS SDK
@@ -20,5 +20,5 @@ lazy val everexport =
       mainClass in assembly := Some("me.assil.everexport.Main"),
     )
 
-lazy val eveJVM = everexport.jvm
-lazy val eveJS = everexport.js.enablePlugins(ScalaJSBundlerPlugin)
+lazy val eveJVM = root.jvm
+lazy val eveJS = root.js.enablePlugins(ScalaJSBundlerPlugin)
