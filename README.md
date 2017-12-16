@@ -21,11 +21,11 @@ The following two examples -- in Scala and ES6, respectively -- show how to use 
 On the JVM (Scala):
 
 ```scala
-import me.assil.everexport.EvernoteExporter
+import me.assil.everexport.EverExport
 
 object QuickStart extends App {
   val token: String = ??? // https://dev.evernote.com/doc/articles/dev_tokens.php
-  val exporter = new EvernoteExporter(token, sandbox = false)
+  val exporter = new EverExport(token, sandbox = false)
   
   // Future-based API
   exporter.listNotebooks map { notebooks =>
@@ -38,7 +38,7 @@ In JS:
 
 ```javascript 1.6
 const everexport = require('everexport.js')
-const exporter = new everexport.EvernoteExporter(token, sandbox) // Same token as above
+const exporter = new everexport.EverExport(token, sandbox) // Same token as above
 
 // Promise-based API
 exporter.listNotebooks().then(notebooks => {
