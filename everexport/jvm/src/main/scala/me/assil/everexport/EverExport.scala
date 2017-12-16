@@ -4,10 +4,11 @@ import com.evernote.auth.{EvernoteAuth, EvernoteService}
 import com.evernote.clients.{ClientFactory, NoteStoreClient}
 import com.evernote.edam.error.{EDAMNotFoundException, EDAMSystemException, EDAMUserException}
 import com.evernote.edam.notestore.{NoteFilter, NoteMetadata, NotesMetadataList, NotesMetadataResultSpec}
-import com.evernote.edam.`type`.{Notebook => ENotebook, Resource => EResource}
+import com.evernote.edam.`type`.{Note => ENote, Notebook => ENotebook, Resource => EResource}
 import com.evernote.thrift.TException
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
 
 // https://dev.evernote.com/doc/reference/Types.html#Struct_Notebook
@@ -18,14 +19,17 @@ case class Notebook(guid: String, name: String, stack: String, created: Long, up
    - https://dev.evernote.com/doc/reference/Types.html#Struct_Note
    - http://dev.evernote.com/doc/reference/NoteStore.html#Struct_NoteMetadata
  */
-case class Note(guid: String, title: String, var content: Option[String], created: Long, updated: Long,
-                notebookGuid: String, tagGuids: Option[List[String]])
+case class Note(guid: String, title: String, content: String, created: Long, updated: Long,
+                notebookGuid: String, tagGuids: Option[List[String]], resources: Option[List[Resource]])
 
 // https://dev.evernote.com/doc/reference/Types.html#Struct_Resource
-case class Resource(guid: String, noteGuid: String, width: Int, height: Int, data: Array[Byte])
+case class Resource(guid: String, noteGuid: String, width: Option[Int], height: Option[Int], data: Array[Byte])
 
 object EverExport {
-  implicit def convertNotebook(n: ENotebook): Notebook = {
+  // Shortcut type
+  type VHMap[A, B] = mutable.HashMap[A, Vector[B]]
+
+  def convertNotebook(n: ENotebook): Notebook = {
     Notebook(
       guid = n.getGuid,
       name = n.getName,
@@ -35,25 +39,26 @@ object EverExport {
     )
   }
 
-  implicit def convertResource(r: EResource): Resource = {
+  def convertResource(r: EResource): Resource = {
     Resource(
       guid = r.getGuid,
       noteGuid = r.getNoteGuid,
-      width = r.getWidth,
-      height = r.getHeight,
+      width = if (r.isSetWidth) Some(r.getWidth) else None,
+      height = if (r.isSetHeight) Some(r.getHeight) else None,
       data = r.getData.getBody
     )
   }
 
-  implicit def convertNote(n: NoteMetadata): Note = {
+  def convertNote(n: ENote): Note = {
     Note(
       guid = n.getGuid,
       title = n.getTitle,
-      content = None,
+      content = n.getContent,
       created = n.getCreated,
       updated = n.getUpdated,
       notebookGuid = n.getNotebookGuid,
-      tagGuids = if (n.getTagGuids != null) Some(n.getTagGuids.asScala.toList) else None
+      tagGuids = if (n.isSetTagGuids) Some(n.getTagGuids.asScala.toList) else None,
+      resources = if (n.isSetResources) Some(n.getResources.asScala.toList.map(convertResource)) else None
     )
   }
 }
@@ -98,30 +103,19 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   }
 
   /**
-    * Get titles of all notes in a given notebook.
-    */
-  @throws[EDAMSystemException]
-  @throws[EDAMUserException]
-  def getNoteTitles(notebook: Notebook): Future[Vector[String]] = {
-    getNotesMetadata(notebook) map { notesMetadata =>
-      notesMetadata.map(_.title)
-    }
-  }
-
-  /**
     * Get the note metadata for a given notebook.
     */
   @throws[EDAMSystemException]
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
   @throws[TException]
-  private def getNotesMetadata(notebook: Notebook, allNotes: Boolean = false): Future[Vector[Note]] = {
+  private def getNotesMetadata(notebookGuid: String, allNotes: Boolean = false): Future[Vector[NoteMetadata]] = {
     Future {
       val noteStore = getNoteStoreClient
 
       // Create a NoteFilter
       val noteFilter = new NoteFilter
-      noteFilter.setNotebookGuid(notebook.guid)
+      noteFilter.setNotebookGuid(notebookGuid)
 
       // Create a ResultsSpec
       val resultSpec = new NotesMetadataResultSpec
@@ -140,9 +134,20 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
         noteStore.findNotesMetadata(noteFilter, (r+1) * 250 - 1, 250, resultSpec).getNotes.asScala
       }
 
-      val allNotes: Vector[Note] = (notesMetadataList.getNotes.asScala.toVector ++ remainingNotes).map(convertNote)
+      val allNotes: Vector[NoteMetadata] = notesMetadataList.getNotes.asScala.toVector ++ remainingNotes
 
       allNotes
+    }
+  }
+
+  /**
+    * Get titles of all notes in a given notebook.
+    */
+  @throws[EDAMSystemException]
+  @throws[EDAMUserException]
+  def getNoteTitles(notebookGuid: String): Future[Vector[String]] = {
+    getNotesMetadata(notebookGuid) map { notesMetadata =>
+      notesMetadata.map(_.getTitle)
     }
   }
 
@@ -150,30 +155,67 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
   @throws[TException]
-  private def getNoteContent(note: Note): Future[Note] = {
-    // TODO: change from getNote to getNoteWithResultSpec when SDK is updated...
+  def getNote(noteGuid: String): Future[Note] = {
     Future {
       val noteStore = getNoteStoreClient
-
-      // Add content to the given note
-      val content = noteStore.getNoteContent(note.guid)
-      note.content = Some(content)
-      note
+      convertNote(noteStore.getNote(noteGuid, true, true, false, false))
     }
   }
 
   /**
-    * Get all notes in a given notebook(s).
+    * Retrieves all notes in a given notebook.
     *
-    * First, grab metadata. Then, grab the actual note content.
+    * @param notebookGuid The GUID of the `Notebook` to retrieve notes from.
+    * @return All of the notes in the given notebook, wrapped in a `Future`.
     */
   @throws[EDAMSystemException]
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
-  def getNotebook(notebook: Notebook): Future[Vector[Note]] = {
-    getNotesMetadata(notebook) flatMap { notes =>
-      val noteFutures = notes map { noteMetadata => getNoteContent(noteMetadata) }
+  def getNotebook(notebookGuid: String): Future[Vector[Note]] = {
+    getNotesMetadata(notebookGuid) flatMap { notesMetadata =>
+      val noteFutures = notesMetadata.map(n => getNote(n.getGuid))
       Future.sequence(noteFutures) // Vector[Future] -> Future[Vector]
+    }
+  }
+
+  /**
+    * Retrieves one (or more) notes using the Evernote API given the note GUID(s).
+    *
+    * @param guids One or more Evernote note GUIDs
+    * @throws EDAMSystemException
+    * @throws EDAMUserException
+    * @throws EDAMNotFoundException
+    * @throws TException
+    * @return A `Future` containing the list of notes requested.
+    */
+  @throws[EDAMSystemException]
+  @throws[EDAMUserException]
+  @throws[EDAMNotFoundException]
+  @throws[TException]
+  def exportNotes(guids: String*): Future[Vector[Note]] = {
+    val noteFutures = guids.toVector.map { guid => getNote(guid) }
+    Future.sequence(noteFutures)
+  }
+
+  @throws[EDAMSystemException]
+  @throws[EDAMUserException]
+  @throws[EDAMNotFoundException]
+  @throws[TException]
+  def exportNotebooks(notebookGuids: String*): Future[VHMap[String, Note]] = {
+    val notebookFutures: Vector[Future[Vector[Note]]] =
+      notebookGuids.map { notebookGuid =>
+        getNotebook(notebookGuid)
+      }.toVector
+
+    // Build Future[HashMap] from retrieved note vectors
+    Future.sequence(notebookFutures) map { notebooks: Vector[Vector[Note]] =>
+      val vhmap = new VHMap[String, Note]()
+
+      for (
+        (notebookGuid, notes) <- notebookGuids.zip(notebooks)
+      ) yield vhmap += (notebookGuid -> notes)
+
+      vhmap
     }
   }
 }
