@@ -6,11 +6,12 @@ version := "0.1"
 
 scalaVersion := "2.12.3"
 
+crossScalaVersions := Seq("2.12.3", "2.11.12")
+
 lazy val root =
   crossProject(JSPlatform, JVMPlatform)
     .crossType(CrossType.Full) // Full directory structure
     .in(file("everexport"))
-    .settings() // Common settings
     .jsSettings(
       // Evernote JS SDK
       npmDependencies in Compile += "evernote" -> "2.0.3"
