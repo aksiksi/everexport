@@ -2,19 +2,15 @@ package me.assil.everexport
 
 import facades.evernote._
 
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
-
 import scala.scalajs.js
 import scala.scalajs.js.Promise
 import scala.scalajs.js.annotation.{JSExport, JSExportTopLevel}
 import scala.scalajs.js.JSConverters._
 
-sealed class EvernoteException(message: String) extends Exception(message)
-final case class EvernoteSystemException(message: String) extends EvernoteException(message)
-final case class EvernoteUserException(message: String) extends EvernoteException(message)
-final case class NoteError(id: String) extends EvernoteException(s"Note $id not found!")
-final case class NotebookError(id: String) extends EvernoteException(s"Notebook $id not found!")
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
+
+sealed class EverExportException(message: String) extends Exception(message)
 
 /**
   * An async API Evernote client for use in a JSON API.
@@ -22,8 +18,8 @@ final case class NotebookError(id: String) extends EvernoteException(s"Notebook 
   * @param token A valid Evernote API authentication token.
   * @param sandbox Set to true to run in the Evernote sandbox.
   */
-@JSExportTopLevel("EvernoteExporter")
-class EvernoteExporter(val token: String, val sandbox: Boolean = false) {
+@JSExportTopLevel("EverExport")
+class EverExport(val token: String, val sandbox: Boolean = false) {
   // Get a NoteStore instance; used for all subsequent API requests
   private val client: Client = new Client(ClientParams(token = token, sandbox = sandbox))
   private val noteStore: NoteStore = client.getNoteStore()
@@ -39,7 +35,7 @@ class EvernoteExporter(val token: String, val sandbox: Boolean = false) {
     * Returns all notebooks in the current user's account.
     */
   @JSExport
-  def listNotebooks(): Promise[js.Array[Notebook]] = {
+  def listNotebooks: Promise[js.Array[Notebook]] = {
     noteStore.listNotebooks()
   }
 
@@ -52,7 +48,7 @@ class EvernoteExporter(val token: String, val sandbox: Boolean = false) {
   def getNotebookByTitle(name: String): Promise[Notebook] = {
     listNotebooks.toFuture.map { notebooks =>
       notebooks.find(_.name == name) match {
-        case None => throw NotebookError(name)
+        case None => throw new EverExportException(name)
         case Some(v) => v
       }
     }.toJSPromise
@@ -100,7 +96,7 @@ class EvernoteExporter(val token: String, val sandbox: Boolean = false) {
 
   def getNotes(notebook: Notebook, allNotes: Boolean = false): Promise[js.Array[Note]] = {
     getNotesMetadata(notebook, allNotes).toFuture flatMap { notesMetadata =>
-      val f = notesMetadata.toVector map { note =>
+      val f = notesMetadata.toVector.map { note =>
         getNote(note.guid).toFuture
       }
 
@@ -113,9 +109,9 @@ class EvernoteExporter(val token: String, val sandbox: Boolean = false) {
     */
   @JSExport
   def getNoteTitles(notebook: Notebook): Promise[js.Array[String]] = {
-    getNotesMetadata(notebook).toFuture map { notesMetadata =>
+    getNotesMetadata(notebook).toFuture.map { notesMetadata =>
       notesMetadata.map(_.title)
-    } toJSPromise
+    }.toJSPromise
   }
 
   /**
