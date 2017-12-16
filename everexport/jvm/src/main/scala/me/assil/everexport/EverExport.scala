@@ -3,7 +3,7 @@ package me.assil.everexport
 import com.evernote.auth.{EvernoteAuth, EvernoteService}
 import com.evernote.clients.{ClientFactory, NoteStoreClient}
 import com.evernote.edam.error.{EDAMNotFoundException, EDAMSystemException, EDAMUserException}
-import com.evernote.edam.notestore.{NoteFilter, NoteMetadata, NotesMetadataList, NotesMetadataResultSpec}
+import com.evernote.edam.notestore.{NoteFilter, NoteMetadata => ENoteMetadata, NotesMetadataList, NotesMetadataResultSpec}
 import com.evernote.edam.`type`.{Note => ENote, Notebook => ENotebook, Resource => EResource}
 import com.evernote.thrift.TException
 
@@ -22,13 +22,13 @@ case class Notebook(guid: String, name: String, stack: String, created: Long, up
 case class Note(guid: String, title: String, content: String, created: Long, updated: Long,
                 notebookGuid: String, tagGuids: Option[List[String]], resources: Option[List[Resource]])
 
+// http://dev.evernote.com/doc/reference/NoteStore.html#Struct_NoteMetadata
+case class NoteMetadata(guid: String, title: String, contentLength: Int, created: Long)
+
 // https://dev.evernote.com/doc/reference/Types.html#Struct_Resource
 case class Resource(guid: String, noteGuid: String, width: Option[Int], height: Option[Int], data: Array[Byte])
 
 object EverExport {
-  // Shortcut type
-  type VHMap[A, B] = mutable.HashMap[A, Vector[B]]
-
   def convertNotebook(n: ENotebook): Notebook = {
     Notebook(
       guid = n.getGuid,
@@ -59,6 +59,15 @@ object EverExport {
       notebookGuid = n.getNotebookGuid,
       tagGuids = if (n.isSetTagGuids) Some(n.getTagGuids.asScala.toList) else None,
       resources = if (n.isSetResources) Some(n.getResources.asScala.toList.map(convertResource)) else None
+    )
+  }
+
+  def convertNoteMetadata(nm: ENoteMetadata): NoteMetadata = {
+    NoteMetadata(
+      guid = nm.getGuid,
+      title = nm.getTitle,
+      contentLength = nm.getContentLength,
+      created = nm.getCreated
     )
   }
 }
@@ -95,10 +104,28 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
     */
   @throws[EDAMSystemException]
   @throws[EDAMUserException]
+  @throws[TException]
   def listNotebooks: Future[Vector[Notebook]] = {
     Future {
       val noteStore = getNoteStoreClient
       noteStore.listNotebooks.asScala.map(convertNotebook).toVector
+    }
+  }
+
+  /**
+    * Get a [[Notebook]] by GUID.
+    *
+    * @param notebookGuid Notebook GUID
+    * @return The requested [[Notebook]] instance
+    */
+  @throws[EDAMSystemException]
+  @throws[EDAMUserException]
+  @throws[EDAMNotFoundException]
+  @throws[TException]
+  def getNotebook(notebookGuid: String): Future[Notebook] = {
+    Future {
+      val noteStore = getNoteStoreClient
+      convertNotebook(noteStore.getNotebook(notebookGuid))
     }
   }
 
@@ -109,7 +136,7 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
   @throws[TException]
-  private def getNotesMetadata(notebookGuid: String, allNotes: Boolean = false): Future[Vector[NoteMetadata]] = {
+  private def getNotesMetadata(notebookGuid: String): Future[Vector[NoteMetadata]] = {
     Future {
       val noteStore = getNoteStoreClient
 
@@ -130,11 +157,15 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
       val numReqs: Int = math.ceil(remaining / 250.0).toInt // Number of additional requests required to get all notes
 
       // Perform a single request for each batch of 250 notes
-      val remainingNotes: Vector[NoteMetadata] = (0 until numReqs).toVector.flatMap { r =>
-        noteStore.findNotesMetadata(noteFilter, (r+1) * 250 - 1, 250, resultSpec).getNotes.asScala
-      }
+      // Returns list of all NoteMetadata
+      val remainingNotes: Vector[NoteMetadata] =
+        (0 until numReqs).toVector.flatMap { r =>
+          val offset = (r+1) * 250 - 1
+          noteStore.findNotesMetadata(noteFilter, offset, 250, resultSpec).getNotes.asScala.map(convertNoteMetadata)
+        }
 
-      val allNotes: Vector[NoteMetadata] = notesMetadataList.getNotes.asScala.toVector ++ remainingNotes
+      val allNotes: Vector[NoteMetadata] =
+        notesMetadataList.getNotes.asScala.map(convertNoteMetadata).toVector ++ remainingNotes
 
       allNotes
     }
@@ -147,7 +178,7 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   @throws[EDAMUserException]
   def getNoteTitles(notebookGuid: String): Future[Vector[String]] = {
     getNotesMetadata(notebookGuid) map { notesMetadata =>
-      notesMetadata.map(_.getTitle)
+      notesMetadata.map(_.title)
     }
   }
 
@@ -171,9 +202,9 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   @throws[EDAMSystemException]
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
-  def getNotebook(notebookGuid: String): Future[Vector[Note]] = {
+  def getNotes(notebookGuid: String): Future[Vector[Note]] = {
     getNotesMetadata(notebookGuid) flatMap { notesMetadata =>
-      val noteFutures = notesMetadata.map(n => getNote(n.getGuid))
+      val noteFutures = notesMetadata.map(n => getNote(n.guid))
       Future.sequence(noteFutures) // Vector[Future] -> Future[Vector]
     }
   }
@@ -181,7 +212,7 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   /**
     * Retrieves one (or more) notes using the Evernote API given the note GUID(s).
     *
-    * @param guids One or more Evernote note GUIDs
+    * @param noteGuids One or more Evernote note GUIDs
     * @throws EDAMSystemException
     * @throws EDAMUserException
     * @throws EDAMNotFoundException
@@ -192,8 +223,8 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
   @throws[TException]
-  def exportNotes(guids: String*): Future[Vector[Note]] = {
-    val noteFutures = guids.toVector.map { guid => getNote(guid) }
+  def exportNotes(noteGuids: String*): Future[Vector[Note]] = {
+    val noteFutures = noteGuids.toVector.map { guid => getNote(guid) }
     Future.sequence(noteFutures)
   }
 
@@ -201,21 +232,12 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
   @throws[TException]
-  def exportNotebooks(notebookGuids: String*): Future[VHMap[String, Note]] = {
+  def exportNotebooks(notebookGuids: String*): Future[Vector[Vector[Note]]] = {
     val notebookFutures: Vector[Future[Vector[Note]]] =
       notebookGuids.map { notebookGuid =>
-        getNotebook(notebookGuid)
+        getNotes(notebookGuid)
       }.toVector
 
-    // Build Future[HashMap] from retrieved note vectors
-    Future.sequence(notebookFutures) map { notebooks: Vector[Vector[Note]] =>
-      val vhmap = new VHMap[String, Note]()
-
-      for (
-        (notebookGuid, notes) <- notebookGuids.zip(notebooks)
-      ) yield vhmap += (notebookGuid -> notes)
-
-      vhmap
-    }
+    Future.sequence(notebookFutures)
   }
 }

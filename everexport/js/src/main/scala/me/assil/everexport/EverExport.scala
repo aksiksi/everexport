@@ -25,13 +25,6 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
   private val noteStore: NoteStore = client.getNoteStore()
 
   /**
-    * Returns the current NoteStore.
-    *
-    * @return `Evernote.NoteStore`
-    */
-  def getNoteStore: NoteStore = noteStore
-
-  /**
     * Returns all notebooks in the current user's account.
     */
   @JSExport
@@ -40,24 +33,14 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
   }
 
   @JSExport
-  def getNotebookByGuid(guid: String): Promise[Notebook] = {
-    noteStore.getNotebook(guid)
+  def getNotebook(notebookGuid: String): Promise[Notebook] = {
+    noteStore.getNotebook(notebookGuid)
   }
 
-  @JSExport
-  def getNotebookByTitle(name: String): Promise[Notebook] = {
-    listNotebooks.toFuture.map { notebooks =>
-      notebooks.find(_.name == name) match {
-        case None => throw new EverExportException(name)
-        case Some(v) => v
-      }
-    }.toJSPromise
-  }
-
-  def getNotesMetadata(notebook: Notebook, allNotes: Boolean = false): Promise[js.Array[NoteMetadata]] = {
+  def getNotesMetadata(notebookGuid: String): Promise[js.Array[NoteMetadata]] = {
     // Create a NoteFilter
     val noteFilter = new NoteFilter
-    noteFilter.notebookGuid = notebook.guid
+    noteFilter.notebookGuid = notebookGuid
 
     // Create a ResultsSpec
     val resultSpec = new NotesMetadataResultSpec
@@ -86,16 +69,22 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
   }
 
   @JSExport
-  def getNote(guid: String): Promise[Note] = {
-    val resultSpec = new NoteResultSpec
-    resultSpec.includeContent = true
-    resultSpec.includeSharedNotes = true
-
-    noteStore.getNoteWithResultSpec(guid, resultSpec)
+  def getNoteTitles(notebookGuid: String): Promise[js.Array[String]] = {
+    getNotesMetadata(notebookGuid).toFuture map { notesMetadata =>
+      notesMetadata.map(_.title)
+    } toJSPromise
   }
 
-  def getNotes(notebook: Notebook, allNotes: Boolean = false): Promise[js.Array[Note]] = {
-    getNotesMetadata(notebook, allNotes).toFuture flatMap { notesMetadata =>
+  def getNote(noteGuid: String, includeResources: Boolean = true): Promise[Note] = {
+    val resultSpec = new NoteResultSpec
+    resultSpec.includeContent = true
+    resultSpec.includeResourcesData = includeResources
+
+    noteStore.getNoteWithResultSpec(noteGuid, resultSpec)
+  }
+
+  def getNotes(notebookGuid: String): Promise[js.Array[Note]] = {
+    getNotesMetadata(notebookGuid).toFuture flatMap { notesMetadata =>
       val f = notesMetadata.toVector.map { note =>
         getNote(note.guid).toFuture
       }
@@ -105,20 +94,26 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
   }
 
   /**
-    * Get titles of all notes in a given notebook.
+    * Export one or more notes.
+    *
+    * @param noteGuids One or more note GUIDs
+    * @return
     */
   @JSExport
-  def getNoteTitles(notebook: Notebook): Promise[js.Array[String]] = {
-    getNotesMetadata(notebook).toFuture.map { notesMetadata =>
-      notesMetadata.map(_.title)
-    }.toJSPromise
+  def exportNotes(noteGuids: String*): Promise[js.Array[Note]] = {
+    val noteFutures = noteGuids.toVector.map { guid => getNote(guid).toFuture }
+    Future.sequence(noteFutures).map(_.toJSArray).toJSPromise
   }
 
   /**
-    * Get all notes in a given notebook.
+    * Export all notes in given notebook(s).
+    *
+    * @return 2D [[js.Array]] of [[Note]]
     */
   @JSExport
-  def getNotebook(notebook: Notebook): Promise[js.Array[Note]] = {
-    getNotes(notebook, allNotes = true)
+  def exportNotebooks(notebookGuids: String*): Promise[js.Array[js.Array[Note]]] = {
+    Future.sequence {
+      notebookGuids.toVector map { guid => getNotes(guid).toFuture }
+    }.map(_.toJSArray).toJSPromise
   }
 }
