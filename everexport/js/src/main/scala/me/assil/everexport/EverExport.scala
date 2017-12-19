@@ -97,23 +97,20 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
     * Export one or more notes.
     *
     * @param noteGuids One or more note GUIDs
-    * @return
+    * @return A [[js.Array]] of [[Promise]], each containing a [[Note]]
     */
   @JSExport
-  def exportNotes(noteGuids: String*): Promise[js.Array[Note]] = {
-    val noteFutures = noteGuids.toVector.map { guid => getNote(guid).toFuture }
-    Future.sequence(noteFutures).map(_.toJSArray).toJSPromise
+  def exportNotes(noteGuids: String*): js.Array[Promise[Note]] = {
+    noteGuids.map(getNote(_)).toJSArray
   }
 
   /**
     * Export all notes in given notebook(s).
     *
-    * @return 2D [[js.Array]] of [[Note]]
+    * @return A 2D [[js.Array]] of [[Promise]]s, where each row corresponds to a notebook [[Promise]]
     */
   @JSExport
-  def exportNotebooks(notebookGuids: String*): Promise[js.Array[js.Array[Note]]] = {
-    Future.sequence {
-      notebookGuids.toVector map { guid => getNotes(guid).toFuture }
-    }.map(_.toJSArray).toJSPromise
+  def exportNotebooks(notebookGuids: String*): js.Array[Promise[js.Array[Note]]] = {
+    notebookGuids.map(getNotes).toJSArray
   }
 }
