@@ -3,13 +3,13 @@ package me.assil.everexport
 import com.evernote.auth.{EvernoteAuth, EvernoteService}
 import com.evernote.clients.{ClientFactory, NoteStoreClient}
 import com.evernote.edam.error.{EDAMNotFoundException, EDAMSystemException, EDAMUserException}
-import com.evernote.edam.notestore.{NoteFilter, NoteMetadata => ENoteMetadata, NotesMetadataList, NotesMetadataResultSpec}
+import com.evernote.edam.notestore.{NoteFilter, NotesMetadataList, NotesMetadataResultSpec, NoteMetadata => ENoteMetadata}
 import com.evernote.edam.`type`.{Note => ENote, Notebook => ENotebook, Resource => EResource}
 import com.evernote.thrift.TException
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 
 // https://dev.evernote.com/doc/reference/Types.html#Struct_Notebook
 case class Notebook(guid: String, name: String, stack: String, created: Long, updated: Long)
@@ -217,27 +217,34 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
     * @throws EDAMUserException
     * @throws EDAMNotFoundException
     * @throws TException
-    * @return A `Future` containing the list of notes requested.
+    * @return A [[Future]] containing a [[Vector]] of [[Try]] for each [[Note]]
     */
   @throws[EDAMSystemException]
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
   @throws[TException]
-  def exportNotes(noteGuids: String*): Future[Vector[Note]] = {
-    val noteFutures = noteGuids.toVector.map { guid => getNote(guid) }
-    Future.sequence(noteFutures)
+  def exportNotes(noteGuids: String*): Future[Vector[Try[Note]]] = {
+    val noteFutures: Vector[Future[Note]] = noteGuids.toVector.map { guid => getNote(guid) }
+
+    // Future[Note] => Future[Try[Note]]
+    val noteFutureTrys = noteFutures.map { f =>
+      f.map(Success(_)).recover { case e => Failure(e) }
+    }
+
+    Future.sequence(noteFutureTrys)
   }
 
   @throws[EDAMSystemException]
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
   @throws[TException]
-  def exportNotebooks(notebookGuids: String*): Future[Vector[Vector[Note]]] = {
+  def exportNotebooks(notebookGuids: String*): Future[Vector[Try[Vector[Note]]]] = {
     val notebookFutures: Vector[Future[Vector[Note]]] =
       notebookGuids.map { notebookGuid =>
         getNotes(notebookGuid)
       }.toVector
 
-    Future.sequence(notebookFutures)
+    // Future[Vector[Note]] -> Future[Try[Vector[Note]]
+    Future.sequence { notebookFutures.map { f => f.map(Success(_)).recover { case x => Failure(x) } } }
   }
 }
