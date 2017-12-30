@@ -2,6 +2,20 @@
 
 A note export API written in Scala based on the [Evernote SDK](https://github.com/evernote/evernote-sdk-java). Compiles to both the JVM and JS (via [Scala.js](https://www.scala-js.org/)) backends.
 
+## Install
+
+Scala:
+
+```bash
+coming soon...
+```
+
+NPM:
+
+```bash
+npm install everexport
+```
+
 ## Build
 
 First, make sure you have `sbt` 1.x installed.
