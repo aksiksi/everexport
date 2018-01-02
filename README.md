@@ -4,13 +4,16 @@ A note export API written in Scala based on the [Evernote SDK](https://github.co
 
 ## Install
 
-Scala:
+### Scala
 
-```bash
-coming soon...
+In your `build.sbt`:
+
+```scala
+resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
+libraryDependencies += "me.assil" %% "everexport" % "0.1-SNAPSHOT"
 ```
 
-NPM:
+### NPM
 
 ```bash
 npm install everexport
