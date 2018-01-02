@@ -19,18 +19,6 @@ libraryDependencies += "me.assil" %% "everexport" % "0.1-SNAPSHOT"
 npm install everexport
 ```
 
-## Build
-
-First, make sure you have `sbt` 1.x installed.
-
-### JVM
-
-Run `sbt everexportJVM/assembly`. Fat JAR in `jvm/target/scala-2.12`.
-
-### JS
-
-Run `sbt everexportJS/fullOptJS`. Optimized JS in `jstarget/scala-2.12/scalajs-bundler/main`.
-
 ## Examples
 
 The following two examples -- in Scala and ES6, respectively -- show how to use EverExport to list all notebooks in a user's account and print them to the console.
@@ -63,3 +51,15 @@ exporter.listNotebooks().then(notebooks => {
     console.log(names)
 })
 ```
+
+## Build
+
+First, make sure you have `sbt` 1.x installed.
+
+### Scala
+
+Run `sbt everexportJVM/package`. JAR in `jvm/target/scala-2.12`.
+
+### JS
+
+Run `sbt everexportJS/fullOptJS`. Optimized JS in `js/target/scala-2.12/scalajs-bundler/main`.
