@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/aksiksi/everexport.svg?branch=master)](https://travis-ci.org/aksiksi/everexport)
 
-A note export API written in Scala based on the [Evernote SDK](https://github.com/evernote/evernote-sdk-java). Compiles to both the JVM and JS (via [Scala.js](https://www.scala-js.org/)) backends.
+A note export API written in Scala based on the [Evernote SDK](https://github.com/evernote/evernote-sdk-java). Compiles to both the JVM and JS (via [Scala.js](https://www.scala-js.org/)) backends. Currently supports both 2.11.x and 2.12.x.
 
 ## Install
 
@@ -23,28 +23,52 @@ npm install everexport
 
 ## Examples
 
-The following two examples -- in Scala and ES6, respectively -- show how to use EverExport to list all notebooks in a user's account and print them to the console.
-
 On the JVM (Scala):
 
 ```scala
-import me.assil.everexport.EverExport
+import me.assil.everexport.{EverExport, Note, Notebook}
+
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration._
+import scala.util.Try
+
+// Global EC for executing Futures
+import scala.concurrent.ExecutionContext.Implicits.global
 
 object QuickStart extends App {
-  val token: String = ??? // https://dev.evernote.com/doc/articles/dev_tokens.php
-  val exporter = new EverExport(token, sandbox = false)
+  // https://dev.evernote.com/doc/articles/dev_tokens.php
+  val token: String = ???
+  val exporter = new EverExport(token, sandbox = true)
+
+  // Get all notebooks in user's account
+  val notebooksFuture: Future[Vector[Notebook]] = exporter.listNotebooks
+
+  // Return all note titles for the *first* notebook
+  val noteTitlesFuture: Future[Vector[String]] =
+    for (
+      notebooks <- notebooksFuture;
+      titles <- exporter.getNoteTitles(notebooks(0).guid)
+    ) yield titles
+
+  // Export all notes from *second* notebook (assuming it exists!)
+  val notesFuture: Future[Vector[Try[Note]]] =
+    for (
+      notebooks <- notebooksFuture;
+      notes <- exporter.exportNotebook(notebooks(1).guid)
+    ) yield notes
+
+  // Wait 5 seconds for last Future to complete
+  val notes = Await.result(notesFuture, 5.seconds)
   
-  // Future-based API
-  exporter.listNotebooks map { notebooks =>
-    println(notebooks.map(_.name).mkString(", "))
-  }
+  // Display notes exported from second notebook
+  println(notes)
 }
 ```
 
 In JS:
 
 ```javascript 1.6
-const everexport = require('everexport.js')
+const everexport = require('everexport')
 const exporter = new everexport.EverExport(token, sandbox) // Same token as above
 
 // Promise-based API
