@@ -69,12 +69,22 @@ In JS:
 
 ```javascript 1.6
 const everexport = require('everexport')
-const exporter = new everexport.EverExport(token, sandbox) // Same token as above
 
-// Promise-based API
-exporter.listNotebooks().then(notebooks => {
-    const names = notebooks.map(notebook => notebook.name).join(", ") 
-    console.log(names)
+const token = process.env.EVERNOTE_TOKEN // Same token as above
+const exporter = new everexport.EverExport(token, true)
+
+// Fetch all notebooks in user's account
+exporter.listNotebooks()
+// Then fetch all notes in *first* notebook
+.then(notebooks => {
+    const n = notebooks[0]
+    return exporter.exportNotebook(n.guid)
+})
+// Then display each note's title and creation time
+.then(notes => {
+    notes.forEach(note => {
+        console.log('Title: ' + note.title + ', Created on: ' + note.created)
+    });
 })
 ```
 

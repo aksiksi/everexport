@@ -28,7 +28,7 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
     * Returns all notebooks in the current user's account.
     */
   @JSExport
-  def listNotebooks: Promise[js.Array[Notebook]] = {
+  def listNotebooks(): Promise[js.Array[Notebook]] = {
     noteStore.listNotebooks()
   }
 
@@ -37,6 +37,7 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
     noteStore.getNotebook(notebookGuid)
   }
 
+  @JSExport
   def getNotesMetadata(notebookGuid: String): Promise[js.Array[NoteMetadata]] = {
     // Create a NoteFilter
     val noteFilter = new NoteFilter
@@ -75,6 +76,7 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
     } toJSPromise
   }
 
+  @JSExport
   def getNote(noteGuid: String, includeResources: Boolean = true): Promise[Note] = {
     val resultSpec = new NoteResultSpec
     resultSpec.includeContent = true
@@ -83,7 +85,8 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
     noteStore.getNoteWithResultSpec(noteGuid, resultSpec)
   }
 
-  def getNotes(notebookGuid: String): Promise[js.Array[Note]] = {
+  @JSExport
+  def exportNotebook(notebookGuid: String): Promise[js.Array[Note]] = {
     getNotesMetadata(notebookGuid).toFuture flatMap { notesMetadata =>
       val f = notesMetadata.toVector.map { note =>
         getNote(note.guid).toFuture
@@ -111,6 +114,6 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
     */
   @JSExport
   def exportNotebooks(notebookGuids: String*): js.Array[Promise[js.Array[Note]]] = {
-    notebookGuids.map(getNotes).toJSArray
+    notebookGuids.map(exportNotebook).toJSArray
   }
 }
