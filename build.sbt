@@ -1,7 +1,7 @@
-import sbt.Keys.scmInfo
+import sbt.Keys._
 import sbtcrossproject.{CrossType, crossProject}
 
-version in ThisBuild := "0.1-SNAPSHOT"
+version in ThisBuild := "0.2-SNAPSHOT"
 
 val commonSettings = Seq(
   name := "everexport",
@@ -25,8 +25,11 @@ lazy val everexport =
       npmDependencies in Compile += "evernote" -> "2.0.3"
     )
     .jvmSettings(
-      // Evernote Java SDK
-      libraryDependencies += "com.evernote" % "evernote-api" % "1.25.1",
+      libraryDependencies ++= Seq(
+        // Evernote Java SDK
+        "com.evernote" % "evernote-api" % "1.25.1",
+        "org.scalatest" %% "scalatest" % "3.0.4" % "test"
+      ),
 
       // Add sonatype repository settings
       publishTo := Some(
