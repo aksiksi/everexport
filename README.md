@@ -1,5 +1,7 @@
 # EverExport
 
+[![Build Status](https://travis-ci.org/aksiksi/everexport.svg?branch=master)](https://travis-ci.org/aksiksi/everexport)
+
 A note export API written in Scala based on the [Evernote SDK](https://github.com/evernote/evernote-sdk-java). Compiles to both the JVM and JS (via [Scala.js](https://www.scala-js.org/)) backends.
 
 ## Install
