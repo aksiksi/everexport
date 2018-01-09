@@ -13,10 +13,34 @@ import scala.concurrent.ExecutionContext.Implicits.global
 sealed class EverExportException(message: String) extends Exception(message)
 
 /**
-  * An async API Evernote client for use in a JSON API.
+  * An [[http://evernote.com Evernote]] API client and note exporter targeting JavaScript.
   *
-  * @param token A valid Evernote API authentication token.
-  * @param sandbox Set to true to run in the Evernote sandbox.
+  * The methods of this class all return Promises and are therefore compatible
+  * with most JavaScript applications.
+  *
+  * Some typical usage examples follow.
+  *
+  * - Get the titles of all notebooks in a user's account (sandbox):
+  *
+  * {{{
+  *   // Evernote sandbox
+  *   val exporter = new EverExport("YOUR_TOKEN", true)
+  *
+  *   // Convert returned Promise to Future
+  *   val titlesFuture =
+  *     for (notebooks <- this.listNotebooks().toFuture) yield notebooks.map(_.name)
+  *
+  *   titlesFuture onComplete {
+  *     case Failure(e) => throw e
+  *     case Success(v: js.Array[String]) => println(v.mkString(", "))
+  *   }
+  * }}}
+  *
+  * @author Assil Ksiksi
+  * @version 0.3
+  * @param token A valid Evernote API authentication token
+  * @param sandbox Set to true to run in the Evernote sandbox
+  * @example val exporter = new EverExport("YOUR_TOKEN", false)
   */
 @JSExportTopLevel("EverExport")
 class EverExport(val token: String, val sandbox: Boolean = false) {
@@ -32,11 +56,26 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
     noteStore.listNotebooks()
   }
 
+  /**
+    * Returns the `Notebook` with the given GUID.
+    *
+    * @param notebookGuid A valid `Notebook` GUID
+    * @return Requested `Notebook` instance
+    */
   @JSExport
   def getNotebook(notebookGuid: String): Promise[Notebook] = {
     noteStore.getNotebook(notebookGuid)
   }
 
+  /**
+    * Returns the `Note` metadata for '''all''' notes in a given `Notebook`.
+    *
+    * The `Note` metadata can be used to learn general information
+    * about the notes in a given `Notebook` ''without'' grabbing their entire contents.
+    *
+    * @param notebookGuid Valid `Notebook` GUID
+    * @return A [[Promise]] containing a [[js.Array]] of metadata, one for each `Note`
+    */
   @JSExport
   def getNotesMetadata(notebookGuid: String): Promise[js.Array[NoteMetadata]] = {
     // Create a NoteFilter
@@ -76,20 +115,44 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
     } toJSPromise
   }
 
+  /**
+    * Exports a single `Note` using the Evernote API.
+    *
+    * @param noteGuid A valid `Note` GUID
+    * @return A `Promise` containing the [[Note]]
+    */
   @JSExport
-  def getNote(noteGuid: String, includeResources: Boolean = true): Promise[Note] = {
+  def exportNote(noteGuid: String): Promise[Note] = {
     val resultSpec = new NoteResultSpec
     resultSpec.includeContent = true
-    resultSpec.includeResourcesData = includeResources
+    resultSpec.includeResourcesData = true
 
     noteStore.getNoteWithResultSpec(noteGuid, resultSpec)
   }
 
+  /**
+    * Exports one (or more) notes using the Evernote API.
+    *
+    * @param noteGuids One or more Evernote `Note` GUIDs as a [[js.Array]]
+    * @return A [[js.Array]] of [[Promise]], each containing a [[Note]]
+    */
+  @JSExport
+  def exportNotes(noteGuids: js.Array[String]): Promise[js.Array[Note]] = {
+    val noteFutures = noteGuids.map(guid => exportNote(guid).toFuture).toVector
+    Future.sequence(noteFutures).map(_.toJSArray).toJSPromise
+  }
+
+  /**
+    * Exports all notes in a given Evernote `Notebook`.
+    *
+    * @param notebookGuid The GUID of a `Notebook`
+    * @return All `Note`s in the given `Notebook`, wrapped in a [[Promise]]
+    */
   @JSExport
   def exportNotebook(notebookGuid: String): Promise[js.Array[Note]] = {
     getNotesMetadata(notebookGuid).toFuture flatMap { notesMetadata =>
-      val f = notesMetadata.toVector.map { note =>
-        getNote(note.guid).toFuture
+      val f = notesMetadata.toVector.map { noteMetadata =>
+        exportNote(noteMetadata.guid).toFuture
       }
 
       Future.sequence(f)
@@ -97,23 +160,14 @@ class EverExport(val token: String, val sandbox: Boolean = false) {
   }
 
   /**
-    * Export one or more notes.
+    * Exports one (or more) `Notebook`s using the Evernote API.
     *
-    * @param noteGuids One or more note GUIDs
-    * @return A [[js.Array]] of [[Promise]], each containing a [[Note]]
-    */
-  @JSExport
-  def exportNotes(noteGuids: String*): js.Array[Promise[Note]] = {
-    noteGuids.map(getNote(_)).toJSArray
-  }
-
-  /**
-    * Export all notes in given notebook(s).
-    *
+    * @param notebookGuids One or more `Notebook` GUIDs
     * @return A 2D [[js.Array]] of [[Promise]]s, where each row corresponds to a notebook [[Promise]]
     */
   @JSExport
-  def exportNotebooks(notebookGuids: String*): js.Array[Promise[js.Array[Note]]] = {
-    notebookGuids.map(exportNotebook).toJSArray
+  def exportNotebooks(notebookGuids: js.Array[String]): Promise[js.Array[js.Array[Note]]] = {
+    val notebookFutures = notebookGuids.map(guid => exportNotebook(guid).toFuture).toVector
+    Future.sequence(notebookFutures).map(_.toJSArray).toJSPromise
   }
 }

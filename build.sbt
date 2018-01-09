@@ -22,7 +22,10 @@ lazy val everexport =
     .settings(commonSettings: _*)
     .jsSettings(
       // Evernote JS SDK via npm
-      npmDependencies in Compile += "evernote" -> "2.0.3"
+      npmDependencies in Compile += "evernote" -> "2.0.5",
+
+      // ScalaTest
+      libraryDependencies += "org.scalatest" %%% "scalatest" % "3.0.4" % "test"
     )
     .jvmSettings(
       libraryDependencies ++= Seq(

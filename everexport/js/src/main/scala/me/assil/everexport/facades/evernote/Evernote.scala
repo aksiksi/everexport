@@ -6,23 +6,19 @@ import scala.scalajs.js.annotation.{JSImport, ScalaJSDefined}
 
 @JSImport("evernote", "Types.Notebook")
 @js.native
-class Notebook extends js.Object {
-  val guid: String = js.native
-  val name: String = js.native
-  val stack: String = js.native
-  val created: Long = js.native
-  val updated: Long = js.native
-}
+class Notebook(var guid: String, var name: String, var stack: String,
+               var created: Long, var updated: Long) extends js.Object
 
 @JSImport("evernote", "Types.Note")
 @js.native
-class Note(guid: String, title: String, content: String, created: Long, updated: Long,
-           notebookGuid: String, tagGuids: js.Array[String], tagNames: js.Array[String],
-           resources: js.Array[Resource]) extends js.Object
+class Note(var guid: String, var title: String, var content: String, var created: Long,
+           var updated: Long, var notebookGuid: String, var tagGuids: js.Array[String],
+           var tagNames: js.Array[String], var resources: js.Array[Resource]) extends js.Object
 
 @JSImport("evernote", "Types.Resource")
 @js.native
-class Resource(guid: String, noteGuid: String, width: Int, height: Int, data: js.Array[Byte]) extends js.Object
+class Resource(var guid: String, var noteGuid: String, var width: Int,
+               var height: Int, var data: js.Array[Byte]) extends js.Object
 
 @js.native
 trait ClientParams extends js.Object {
@@ -55,14 +51,14 @@ object ClientParams {
 class Client(val params: ClientParams) extends js.Object {
 
   // https://github.com/evernote/evernote-sdk-js/blob/a5f9eb20c30c148fc8fc3cd48016763e22e99431/src/client.js#L75
-  def getRequestToken(callbackUrl: String, callback: js.Function3[String, String, String, Unit]): Unit = js.native
+  def getRequestToken(callbackUrl: String, callback: js.Function3[String, String, String, Unit]): String = js.native
 
   // https://github.com/evernote/evernote-sdk-js/blob/a5f9eb20c30c148fc8fc3cd48016763e22e99431/src/client.js#L105
   def getNoteStore(noteStoreUrl: String = ""): NoteStore = js.native
 
   // https://github.com/evernote/evernote-sdk-js/blob/a5f9eb20c30c148fc8fc3cd48016763e22e99431/src/client.js#L86
   def getAccessToken(oauthToken: String, oauthTokenSecret: String, oauthVerifier: String,
-                     callback: js.Function3[String, String, String, Unit]): Unit = js.native
+                     callback: js.Function3[String, String, String, Unit]): String = js.native
 }
 
 @JSImport("evernote", "NoteStore")
