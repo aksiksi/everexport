@@ -12,17 +12,18 @@ import scala.util.{Failure, Success, Try}
 
 import EvernoteHelpers._
 
-/** An [[ http://evernote.com/ Evernote ]] API client and note exporter.
+/**
+  * An [[http://evernote.com Evernote]] API client and note exporter.
   *
   * All of the methods in this class return a [[Future]] which can be handled
   * as required. Further, all blocking API calls are wrapped in [[blocking]].
   *
   * Of course, this means that you need to pass in an [[ExecutionContext]].
   * You can construct one using the methods provided in [[util]], or just pass in the
-  * global [[http://www.scala-lang.org/api/2.12.3/scala/concurrent/ExecutionContext$$Implicits$.html EC ]].
+  * global [[http://www.scala-lang.org/api/2.12.3/scala/concurrent/ExecutionContext$$Implicits$.html EC]].
   *
   * This class is thread-safe since all methods construct a new Evernote
-  * [[https://thrift.apache.org/ Thrift]] client in-place.
+  * [[https://thrift.apache.org Thrift]] client in-place.
   * This covers the case of, for example, sharing a ''single'' [[EverExport]] instance
   * across multiple threads.
   *
@@ -31,7 +32,7 @@ import EvernoteHelpers._
   * - Get the titles of all notebooks in a user's account (sandbox):
   *
   * {{{
-  *   val exporter = new EverExport("YOUR_TOKEN", sandbox = true, numThreads = 10)
+  *   val exporter = new EverExport("YOUR_TOKEN", sandbox = true)
   *
   *   val titlesFuture =
   *     for (notebooks <- exporter.listNotebooks) yield notebooks.map(_.name)
@@ -43,7 +44,7 @@ import EvernoteHelpers._
   * }}}
   *
   * @author Assil Ksiksi
-  * @version 0.2
+  * @version 0.3
   * @param token A valid Evernote API authentication token
   * @param sandbox Set to true to run in the Evernote sandbox
   * @example val exporter = new EverExport("YOUR_TOKEN", sandbox = false)
@@ -56,7 +57,8 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   private val evernoteAuth = new EvernoteAuth(service, token)
   private val factory = new ClientFactory(evernoteAuth)
 
-  /** Constructs and returns a new [[NoteStoreClient]] instance.
+  /**
+    * Constructs and returns a new [[NoteStoreClient]] instance.
     *
     * Throws an [[Exception]] if construction fails.
     *
@@ -72,7 +74,8 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
     factory.createNoteStoreClient
   }
 
-  /** Lists all notebooks in a user's account.
+  /**
+    * Returns all notebooks in a user's account.
     *
     * @throws EDAMSystemException
     * @throws EDAMUserException
@@ -92,7 +95,8 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
     }
   }
 
-  /** Returns the `Notebook` with the given GUID.
+  /**
+    * Returns the `Notebook` with the given GUID.
     *
     * @param notebookGuid A valid `Notebook` GUID
     * @return The requested [[Notebook]] instance, wrapped in a [[Future]]
@@ -111,7 +115,8 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
     }
   }
 
-  /** Returns the `Note` metadata for '''all''' notes in a given `Notebook`.
+  /**
+    * Returns the `Note` metadata for '''all''' notes in a given `Notebook`.
     *
     * The `Note` metadata can be used to learn general information
     * about the notes in a given `Notebook` ''without'' grabbing their entire contents.
@@ -196,7 +201,8 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
     }
   }
 
-  /** Returns the titles of all notes in a given notebook.
+  /**
+    * Returns the titles of all notes in a given notebook.
     *
     * @param notebookGuid The GUID of the `Notebook`
     * @throws EDAMSystemException
@@ -213,36 +219,36 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
     }
   }
 
-  /** Retrieves a single [[Note]].
+  /**
+    * Exports a single `Note` using the Evernote API.
     *
     * @param noteGuid A valid `Note` GUID
     * @throws EDAMSystemException
     * @throws EDAMUserException
     * @throws EDAMNotFoundException
     * @throws TException
-    * @return The [[Note]] instance, if found
+    * @return The [[Note]] instance, wrapped in a [[scala.util.Try]]
     */
   @throws[EDAMSystemException]
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
   @throws[TException]
-  def getNote(noteGuid: String): Future[Note] = {
+  def exportNote(noteGuid: String): Future[Try[Note]] = {
     Future {
       val noteStore = getNoteStoreClient
-      convertNote {
-        blocking {
-          noteStore.getNote(noteGuid, true, true, false, false)
-        }
+      Try {
+        convertNote { blocking(noteStore.getNote(noteGuid, true, true, false, false)) }
       }
     }
   }
 
-  /** Exports one (or more) notes using the Evernote API.
+  /**
+    * Exports one (or more) notes using the Evernote API.
     *
     * Gracefully handles exceptions by returning a [[Vector]] of [[Try]].
     * This allows you to check for potential exceptions and react accordingly.
     *
-    * @param noteGuids One or more Evernote `Note` GUIDs
+    * @param noteGuids One or more Evernote `Note` GUIDs as a [[Vector]]
     * @throws EDAMSystemException
     * @throws EDAMUserException
     * @throws EDAMNotFoundException
@@ -253,18 +259,13 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
   @throws[TException]
-  def exportNotes(noteGuids: String*): Future[Vector[Try[Note]]] = {
-    val noteFutures: Vector[Future[Note]] = noteGuids.toVector.map { guid => getNote(guid) }
-
-    // Convert Future[Note] => Future[Try[Note]]
-    val noteFutureTrys = noteFutures.map { f =>
-      f.map(Success(_)).recover { case e => Failure(e) }
-    }
-
-    Future.sequence(noteFutureTrys)
+  def exportNotes(noteGuids: Vector[String]): Future[Vector[Try[Note]]] = {
+    val noteFutures: Vector[Future[Try[Note]]] = noteGuids.map { guid => exportNote(guid) }
+    Future.sequence(noteFutures)
   }
 
-  /** Exports all notes in a given `Notebook`.
+  /**
+    * Exports all notes in a given `Notebook`.
     *
     * Returns each [[Note]] instance wrapped in a [[Try]] for graceful
     * exception handling.
@@ -282,18 +283,13 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   @throws[TException]
   def exportNotebook(notebookGuid: String): Future[Vector[Try[Note]]] = {
     getNotesMetadata(notebookGuid) flatMap { notesMetadata =>
-      val noteFutures = notesMetadata.map(n => getNote(n.guid))
-
-      // Convert Future[Note] => Future[Try[Note]]
-      val noteFutureTrys = noteFutures.map { f =>
-        f.map(Success(_)).recover { case e => Failure(e) }
-      }
-
-      Future.sequence(noteFutureTrys)
+      val noteFutures = notesMetadata.map(n => exportNote(n.guid))
+      Future.sequence(noteFutures)
     }
   }
 
-  /** Exports one (or more) `Notebook`s using the Evernote API.
+  /**
+    * Exports one (or more) `Notebook`s using the Evernote API.
     *
     * The sequence of `Notebook`s is maintained as it was passed in. You
     * can still use [[Notebook.guid]] if you do not want to track ordering.
@@ -312,11 +308,10 @@ class EverExport(val token: String, val sandbox: Boolean = false)(implicit ec: E
   @throws[EDAMUserException]
   @throws[EDAMNotFoundException]
   @throws[TException]
-  def exportNotebooks(notebookGuids: String*): Future[Vector[Vector[Try[Note]]]] = {
+  def exportNotebooks(notebookGuids: Vector[String]): Future[Vector[Vector[Try[Note]]]] = {
     val notebookFutures: Vector[Future[Vector[Try[Note]]]] =
       notebookGuids.map { notebookGuid => exportNotebook(notebookGuid) }.toVector
 
-    // Future[Vector[Note]] -> Future[Try[Vector[Note]]
     Future.sequence(notebookFutures)
   }
 }

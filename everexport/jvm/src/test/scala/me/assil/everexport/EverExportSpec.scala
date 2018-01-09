@@ -14,19 +14,20 @@ class EverExportSpec extends AsyncFunSuite {
 
   test("Exports all notes from a user's account successfully") {
     val f1 = exporter.listNotebooks flatMap { notebooks =>
-      val notebookGuids = notebooks.map(_.guid)
-      exporter.exportNotebooks(notebookGuids: _*)
+      exporter.exportNotebooks(notebooks.map(_.guid))
     }
 
     f1 map { notes =>
-      // Flatten returned notebooks, map Try to Boolean, then ensure all true
-      val results: Vector[Boolean] =
+      // Flatten returned notebooks, map Try to titles
+      val results: Vector[String] =
         notes.flatten.map {
-          case Failure(_) => false
-          case Success(_) => true
+          case Failure(e) => "-1111111"
+          case Success(v) => v.title
         }
 
-      assert(!results.contains(false))
+      println(results)
+
+      assert(!results.contains("-1111111"))
     }
   }
 }
