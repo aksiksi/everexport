@@ -12,7 +12,7 @@ In your `build.sbt`:
 
 ```scala
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
-libraryDependencies += "me.assil" %% "everexport" % "0.2-SNAPSHOT"
+libraryDependencies += "me.assil" %% "everexport" % "0.3-SNAPSHOT"
 ```
 
 ### NPM

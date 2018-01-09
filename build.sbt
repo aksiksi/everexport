@@ -1,7 +1,7 @@
 import sbt.Keys._
 import sbtcrossproject.{CrossType, crossProject}
 
-version in ThisBuild := "0.2-SNAPSHOT"
+version in ThisBuild := "0.3-SNAPSHOT"
 
 val commonSettings = Seq(
   name := "everexport",
